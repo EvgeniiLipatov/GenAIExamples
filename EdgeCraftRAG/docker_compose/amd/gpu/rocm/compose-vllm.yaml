@@ -1,0 +1,124 @@
+# Copyright (C) 2024 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  server:
+    image: docker.io/opea/edgecraftrag-server:cpuinfo
+    user: 1000:1000
+    container_name: edgecraftrag-server
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      HF_ENDPOINT: ${HF_ENDPOINT}
+      vLLM_ENDPOINT: ${EDGECRAFTRAG_VLLM_ENDPOINT}
+      ENABLE_BENCHMARK: ${ENABLE_BENCHMARK:-false}
+      HUGGINGFACEHUB_API_TOKEN: ${EDGECRAFTRAG_HUGGINGFACEHUB_API_TOKEN}
+      HF_TOKEN: ${EDGECRAFTRAG_HUGGINGFACEHUB_API_TOKEN}
+
+    volumes:
+      - ${MODEL_PATH:-${PWD}}:/home/user/models
+      - ${DOC_PATH:-${PWD}}:/home/user/docs
+      - ${UI_TMPFILE_PATH:-${PWD}}:/home/user/ui_cache
+      - ${HF_CACHE:-${HOME}/.cache}:/home/user/.cache
+      - ${PROMPT_PATH:-${PWD}}:/templates/custom
+    ports:
+      - ${PIPELINE_SERVICE_PORT:-16010}:${PIPELINE_SERVICE_PORT:-16010}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri/card32:/dev/dri/card32
+      - /dev/dri/renderD160:/dev/dri/renderD160
+      - /dev/dri/card40:/dev/dri/card40
+      - /dev/dri/renderD168:/dev/dri/renderD168
+      - /dev/dri/card48:/dev/dri/card48
+      - /dev/dri/renderD176:/dev/dri/renderD176
+      - /dev/dri/card56:/dev/dri/card56
+      - /dev/dri/renderD184:/dev/dri/renderD184
+
+    group_add:
+      - ${VIDEOGROUPID:-44}
+      - ${RENDERGROUPID:-109}
+  ecrag:
+    image: ${REGISTRY:-opea}/edgecraftrag:${TAG:-latest}
+    container_name: edgecraftrag
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      MEGA_SERVICE_PORT: ${EDGECRAFTRAG_MEGA_SERVICE_PORT:-16011}
+      MEGA_SERVICE_HOST_IP: ${EDGECRAFTRAG_MEGA_SERVICE_HOST_IP:-${HOST_IP}}
+      PIPELINE_SERVICE_PORT: ${PIPELINE_SERVICE_PORT:-16010}
+      PIPELINE_SERVICE_HOST_IP: ${PIPELINE_SERVICE_HOST_IP:-${HOST_IP}}
+    ports:
+      - ${MEGA_SERVICE_PORT:-16011}:${MEGA_SERVICE_PORT:-16011}
+    depends_on:
+      - server
+  ui:
+    image: ${REGISTRY:-opea}/edgecraftrag-ui:${TAG:-latest}
+    container_name: edgecraftrag-ui
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      MEGA_SERVICE_PORT: ${EDGECRAFTRAG_MEGA_SERVICE_PORT:-16011}
+      MEGA_SERVICE_HOST_IP: ${EDGECRAFTRAG_MEGA_SERVICE_HOST_IP:-${HOST_IP}}
+      PIPELINE_SERVICE_PORT: ${PIPELINE_SERVICE_PORT:-16010}
+      PIPELINE_SERVICE_HOST_IP: ${PIPELINE_SERVICE_HOST_IP:-${HOST_IP}}
+      UI_SERVICE_PORT: ${UI_SERVICE_PORT:-8082}
+      UI_SERVICE_HOST_IP: ${UI_SERVICE_HOST_IP:-0.0.0.0}
+    volumes:
+      - ${UI_TMPFILE_PATH:-${PWD}}:/home/user/ui_cache
+    ports:
+      - ${UI_SERVICE_PORT:-8082}:${UI_SERVICE_PORT:-8082}
+    restart: always
+    depends_on:
+      - server
+      - ecrag
+  edgecraftrag-vllm-service:
+    image: ${REGISTRY:-opea}/vllm-rocm:${TAG:-latest}
+    container_name: edgecraftrag-vllm-service
+    ports:
+      - "${EDGECRAFTRAG_VLLM_SERVICE_PORT:-8028}:8011"
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      HUGGINGFACEHUB_API_TOKEN: ${EDGECRAFTRAG_HUGGINGFACEHUB_API_TOKEN}
+      HF_TOKEN: ${EDGECRAFTRAG_HUGGINGFACEHUB_API_TOKEN}
+      HF_HUB_DISABLE_PROGRESS_BARS: 1
+      HF_HUB_ENABLE_HF_TRANSFER: 0
+      WILM_USE_TRITON_FLASH_ATTENTION: 0
+      PYTORCH_JIT: 0
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://${HOST_IP}:${EDGECRAFTRAG_VLLM_SERVICE_PORT:-8028}/health || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 100
+    volumes:
+      - "${HF_CACHE:-${HOME}/.cache}:/data"
+    shm_size: 20G
+    #devices:
+    ##  - /dev/kfd:/dev/kfd
+    ##  - /dev/dri/:/dev/dri/
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri/card32:/dev/dri/card32
+      - /dev/dri/renderD160:/dev/dri/renderD160
+      - /dev/dri/card40:/dev/dri/card40
+      - /dev/dri/renderD168:/dev/dri/renderD168
+      - /dev/dri/card48:/dev/dri/card48
+      - /dev/dri/renderD176:/dev/dri/renderD176
+      - /dev/dri/card56:/dev/dri/card56
+      - /dev/dri/renderD184:/dev/dri/renderD184
+    cap_add:
+      - SYS_PTRACE
+    group_add:
+      - video
+    security_opt:
+      - seccomp:unconfined
+      - apparmor=unconfined
+    command: "--model ${EDGECRAFTRAG_LLM_MODEL_ID} --swap-space 16 --disable-log-requests --dtype float16 --tensor-parallel-size 4 --host 0.0.0.0 --port 8011 --num-scheduler-steps 1 --distributed-executor-backend \"mp\""
+    ipc: host
+networks:
+  default:
+    driver: bridge
