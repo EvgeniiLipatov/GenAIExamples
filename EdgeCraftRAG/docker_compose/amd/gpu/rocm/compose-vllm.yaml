@@ -30,10 +30,7 @@ services:
       - /dev/dri/renderD160:/dev/dri/renderD160
       - /dev/dri/card40:/dev/dri/card40
       - /dev/dri/renderD168:/dev/dri/renderD168
-      - /dev/dri/card48:/dev/dri/card48
-      - /dev/dri/renderD176:/dev/dri/renderD176
-      - /dev/dri/card56:/dev/dri/card56
-      - /dev/dri/renderD184:/dev/dri/renderD184
+
 
     group_add:
       - ${VIDEOGROUPID:-44}
@@ -106,10 +103,7 @@ services:
       - /dev/dri/renderD160:/dev/dri/renderD160
       - /dev/dri/card40:/dev/dri/card40
       - /dev/dri/renderD168:/dev/dri/renderD168
-      - /dev/dri/card48:/dev/dri/card48
-      - /dev/dri/renderD176:/dev/dri/renderD176
-      - /dev/dri/card56:/dev/dri/card56
-      - /dev/dri/renderD184:/dev/dri/renderD184
+  
     cap_add:
       - SYS_PTRACE
     group_add:
