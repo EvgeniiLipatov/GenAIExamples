@@ -1,0 +1,204 @@
+Запуск edgecraftrag:
+
+для корректного запуска compose нужна следующая структура директорий по пути GenAIExamples/EdgeCraftRAG/docker_compose/amd/gpu/rocm:
+
+.
+├── Dockerfile
+├── cache
+├── compose-vllm.yaml
+├── docs
+├── models
+├── set_env_vllm.sh
+├── templates
+└── ui_cache
+
+
+также должны быть правильно указаны владельцы каталогов:  (Контейнеры запускаются из под пользователя user c uid:gid 1000:1000
+В хостовой системе эти идентификаторы присвоены пользователю и группе llama )
+
+-rw-rw-r-- 1 huggingface huggingface   63 Apr 16 08:45 Dockerfile
+drwxr-xr-x 5 llama       llama       4096 Apr 16 09:39 cache
+-rw-rw-r-- 1 huggingface huggingface 4194 Apr 17 08:41 compose-vllm.yaml
+drwxr-xr-x 2 root        root        4096 Apr 16 08:50 docs
+drwxr-xr-x 3 llama       llama       4096 Apr 17 08:21 models
+-rw-rw-r-- 1 huggingface huggingface 1777 Apr 16 08:45 set_env_vllm.sh
+drwxr-xr-x 3 llama       llama       4096 Apr 16 08:50 templates
+drwxr-xr-x 3 llama       llama       4096 Apr 16 09:39 ui_cache
+
+Запуск компоуза осуществляется из директории  GenAIExamples/EdgeCraftRAG/docker_compose/amd/gpu/rocm
+
+docker compose -f compose-vllm.yaml --env-file set_env_vllm.sh up -d
+
+Изначально не запускалась служба сервер. Проболема была в отстутствии  модуля cpuinfo. Пересобрали базовый образ с добавлением пакета py-cpuinfo. После этого запуск
+прошел успешно. 
+
+Все контейнеры запускаются успешно:
+
+NAME                        IMAGE                                        COMMAND                  SERVICE                     CREATED          STATUS                    PORTS
+edgecraftrag                opea/edgecraftrag:latest                     "python chatqna.py"      ecrag                       12 minutes ago   Up 12 minutes             0.0.0.0:16011->16011/tcp, :::16011->16011/tcp
+edgecraftrag-server         docker.io/opea/edgecraftrag-server:cpuinfo   "python -m edgecraft…"   server                      12 minutes ago   Up 12 minutes             0.0.0.0:16010->16010/tcp, :::16010->16010/tcp
+edgecraftrag-ui             opea/edgecraftrag-ui:latest                  "/docker-entrypoint.…"   ui                          12 minutes ago   Up 12 minutes             80/tcp, 0.0.0.0:8082->8082/tcp, :::8082->8082/tcp
+edgecraftrag-vllm-service   opea/vllm-rocm:latest                        "python3 /workspace/…"   edgecraftrag-vllm-service   12 minutes ago   Up 12 minutes (healthy)   0.0.0.0:8028->8011/tcp, :::8028->8011/tcp
+
+
+Логи:
+
+ui:
+edgecraftrag-ui  | /docker-entrypoint.sh: /docker-entrypoint.d/ is not empty, will attempt to perform configuration
+edgecraftrag-ui  | /docker-entrypoint.sh: Looking for shell scripts in /docker-entrypoint.d/
+edgecraftrag-ui  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
+edgecraftrag-ui  | 10-listen-on-ipv6-by-default.sh: info: Getting the checksum of /etc/nginx/conf.d/default.conf
+edgecraftrag-ui  | 10-listen-on-ipv6-by-default.sh: info: Enabled listen on IPv6 in /etc/nginx/conf.d/default.conf
+edgecraftrag-ui  | /docker-entrypoint.sh: Sourcing /docker-entrypoint.d/15-local-resolvers.envsh
+edgecraftrag-ui  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/20-envsubst-on-templates.sh
+edgecraftrag-ui  | /docker-entrypoint.sh: Launching /docker-entrypoint.d/30-tune-worker-processes.sh
+edgecraftrag-ui  | /docker-entrypoint.sh: Configuration complete; ready for start up
+
+ecrag:
+edgecraftrag  | [2025-04-17 07:53:44,466] [    INFO] - Base service - CORS is enabled.
+edgecraftrag  | [2025-04-17 07:53:44,466] [    INFO] - Base service - Setting up HTTP server
+edgecraftrag  | [2025-04-17 07:53:44,467] [    INFO] - Base service - Uvicorn server setup on port 16011
+edgecraftrag  | INFO:     Waiting for application startup.
+edgecraftrag  | INFO:     Application startup complete.
+edgecraftrag  | INFO:     Uvicorn running on http://0.0.0.0:16011 (Press CTRL+C to quit)
+edgecraftrag  | [2025-04-17 07:53:44,478] [    INFO] - Base service - HTTP server setup successful
+
+server:
+edgecraftrag-server  | /usr/local/lib/python3.11/site-packages/openvino/runtime/__init__.py:10: DeprecationWarning: The `openvino.runtime` module is deprecated and will be removed in the 2026.0 release. Please replace `openvino.runtime` with `openvino`.
+edgecraftrag-server  |   warnings.warn(
+edgecraftrag-server  | LLM is explicitly disabled. Using MockLLM.   - ###  Сильно смущает вот эта строка
+edgecraftrag-server  | INFO:     Started server process [1]
+edgecraftrag-server  | INFO:     Waiting for application startup.
+edgecraftrag-server  | INFO:     Application startup complete.
+edgecraftrag-server  | INFO:     Uvicorn running on http://0.0.0.0:16010 (Press CTRL+C to quit)
+
+edgecraftrag-vllm-service:
+edgecraftrag-vllm-service  | The cache for model files in Transformers v4.22.0 has been updated. Migrating your old cache. This is a one-time only operation. You can interrupt this and resume the migration later on by calling `transformers.utils.move_cache()`.
+edgecraftrag-vllm-service  | INFO 04-17 07:53:46 __init__.py:179] Automatically detected platform rocm.
+edgecraftrag-vllm-service  | WARNING 04-17 07:53:46 rocm.py:34] `fork` method is not supported by ROCm. VLLM_WORKER_MULTIPROC_METHOD is overridden to `spawn` instead.
+edgecraftrag-vllm-service  | INFO 04-17 07:53:46 api_server.py:768] vLLM API server version 0.6.7.dev220+g84f5d47b
+edgecraftrag-vllm-service  | INFO 04-17 07:53:46 api_server.py:769] args: Namespace(host='0.0.0.0', port=8011, uvicorn_log_level='info', allow_credentials=False, allowed_origins=['*'], allowed_methods=['*'], allowed_headers=['*'], api_key=None, lora_modules=None, prompt_adapters=None, chat_template=None, chat_template_content_format='auto', response_role='assistant', ssl_keyfile=None, ssl_certfile=None, ssl_ca_certs=None, ssl_cert_reqs=0, root_path=None, middleware=[], return_tokens_as_token_ids=False, disable_frontend_multiprocessing=False, enable_request_id_headers=False, enable_auto_tool_choice=False, tool_call_parser=None, tool_parser_plugin='', model='Qwen/Qwen2-7B-Instruct', task='auto', tokenizer=None, skip_tokenizer_init=False, revision=None, code_revision=None, tokenizer_revision=None, tokenizer_mode='auto', trust_remote_code=False, allowed_local_media_path=None, download_dir=None, load_format='auto', config_format=<ConfigFormat.AUTO: 'auto'>, dtype='float16', kv_cache_dtype='auto', max_model_len=None, guided_decoding_backend='xgrammar', logits_processor_pattern=None, distributed_executor_backend='mp', worker_use_ray=False, pipeline_parallel_size=1, tensor_parallel_size=2, max_parallel_loading_workers=None, ray_workers_use_nsight=False, block_size=None, enable_prefix_caching=None, disable_sliding_window=False, use_v2_block_manager=True, num_lookahead_slots=0, seed=0, swap_space=16.0, cpu_offload_gb=0, gpu_memory_utilization=0.9, num_gpu_blocks_override=None, max_num_batched_tokens=None, max_num_seqs=None, max_logprobs=20, disable_log_stats=False, quantization=None, rope_scaling=None, rope_theta=None, hf_overrides=None, enforce_eager=False, max_seq_len_to_capture=8192, disable_custom_all_reduce=False, tokenizer_pool_size=0, tokenizer_pool_type='ray', tokenizer_pool_extra_config=None, limit_mm_per_prompt=None, mm_processor_kwargs=None, disable_mm_preprocessor_cache=False, enable_lora=False, enable_lora_bias=False, max_loras=1, max_lora_rank=16, lora_extra_vocab_size=256, lora_dtype='auto', long_lora_scaling_factors=None, max_cpu_loras=None, fully_sharded_loras=False, enable_prompt_adapter=False, max_prompt_adapters=1, max_prompt_adapter_token=0, device='auto', num_scheduler_steps=1, multi_step_stream_outputs=True, scheduler_delay_factor=0.0, enable_chunked_prefill=None, speculative_model=None, speculative_model_quantization=None, num_speculative_tokens=None, speculative_disable_mqa_scorer=False, speculative_draft_tensor_parallel_size=None, speculative_max_model_len=None, speculative_disable_by_batch_size=None, ngram_prompt_lookup_max=None, ngram_prompt_lookup_min=None, spec_decoding_acceptance_method='rejection_sampler', typical_acceptance_sampler_posterior_threshold=None, typical_acceptance_sampler_posterior_alpha=None, disable_logprobs_during_spec_decoding=None, model_loader_extra_config=None, ignore_patterns=[], preemption_mode=None, served_model_name=None, qlora_adapter_name_or_path=None, otlp_traces_endpoint=None, collect_detailed_traces=None, disable_async_output_proc=False, scheduling_policy='fcfs', override_neuron_config=None, override_pooler_config=None, compilation_config=None, kv_transfer_config=None, worker_cls='auto', generation_config=None, calculate_kv_scales=False, disable_log_requests=True, max_log_len=None, disable_fastapi_docs=False, enable_prompt_tokens_details=False)
+edgecraftrag-vllm-service  | INFO 04-17 07:53:46 api_server.py:195] Started engine process with PID 77
+edgecraftrag-vllm-service  | WARNING 04-17 07:53:47 config.py:2341] Casting torch.bfloat16 to torch.float16.
+edgecraftrag-vllm-service  | INFO 04-17 07:53:49 __init__.py:179] Automatically detected platform rocm.
+edgecraftrag-vllm-service  | WARNING 04-17 07:53:51 config.py:2341] Casting torch.bfloat16 to torch.float16.
+edgecraftrag-vllm-service  | INFO 04-17 07:53:59 config.py:513] This model supports multiple tasks: {'score', 'classify', 'reward', 'embed', 'generate'}. Defaulting to 'generate'.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:02 config.py:513] This model supports multiple tasks: {'reward', 'classify', 'generate', 'embed', 'score'}. Defaulting to 'generate'.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:08 engine.py:72] Initializing an LLM engine (v0.6.7.dev220+g84f5d47b) with config: model='Qwen/Qwen2-7B-Instruct', speculative_config=None, tokenizer='Qwen/Qwen2-7B-Instruct', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, override_neuron_config=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=32768, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=2, pipeline_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto,  device_config=cuda, decoding_config=DecodingConfig(guided_decoding_backend='xgrammar'), observability_config=ObservabilityConfig(otlp_traces_endpoint=None, collect_model_forward_time=False, collect_model_execute_time=False), seed=0, served_model_name=Qwen/Qwen2-7B-Instruct, num_scheduler_steps=1, multi_step_stream_outputs=True, enable_prefix_caching=False, chunked_prefill_enabled=False, use_async_output_proc=True, disable_mm_preprocessor_cache=False, mm_processor_kwargs=None, pooler_config=None, compilation_config={"splitting_ops":[],"candidate_compile_sizes":[],"compile_sizes":[],"capture_sizes":[256,248,240,232,224,216,208,200,192,184,176,168,160,152,144,136,128,120,112,104,96,88,80,72,64,56,48,40,32,24,16,8,4,2,1],"max_capture_size":256}, use_cached_outputs=True, 
+edgecraftrag-vllm-service  | WARNING 04-17 07:54:08 multiproc_worker_utils.py:298] Reducing Torch parallelism from 128 threads to 1 to avoid unnecessary CPU contention. Set OMP_NUM_THREADS in the external environment to tune this value as needed.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:08 custom_cache_manager.py:17] Setting Triton cache manager to: vllm.triton_utils.custom_cache_manager:CustomCacheManager
+edgecraftrag-vllm-service  | INFO 04-17 07:54:09 rocm.py:124] None is not supported in AMD GPUs.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:09 rocm.py:125] Using ROCmFlashAttention backend.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:11 __init__.py:179] Automatically detected platform rocm.
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:12 multiproc_worker_utils.py:227] Worker ready; awaiting tasks
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:18 rocm.py:124] None is not supported in AMD GPUs.
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:18 rocm.py:125] Using ROCmFlashAttention backend.
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:18 pynccl_wrapper.py:219] Found nccl from library librccl.so.1
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:18 pynccl.py:69] vLLM is using nccl==2.21.5
+edgecraftrag-vllm-service  | INFO 04-17 07:54:18 pynccl_wrapper.py:219] Found nccl from library librccl.so.1
+edgecraftrag-vllm-service  | INFO 04-17 07:54:18 pynccl.py:69] vLLM is using nccl==2.21.5
+edgecraftrag-vllm-service  | INFO 04-17 07:54:19 shm_broadcast.py:256] vLLM message queue communication handle: Handle(connect_ip='127.0.0.1', local_reader_ranks=[1], buffer_handle=(1, 4194304, 6, 'psm_fbb8a7d2'), local_subscribe_port=59915, remote_subscribe_port=None)
+edgecraftrag-vllm-service  | INFO 04-17 07:54:19 model_runner.py:1095] Starting to load model Qwen/Qwen2-7B-Instruct...
+edgecraftrag-vllm-service  | WARNING 04-17 07:54:19 rocm.py:211] Model architecture 'Qwen2ForCausalLM' is partially supported by ROCm: Sliding window attention (SWA) is not yet supported in Triton flash attention. For half-precision SWA support, please use CK flash attention by setting `VLLM_USE_TRITON_FLASH_ATTN=0`
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:19 model_runner.py:1095] Starting to load model Qwen/Qwen2-7B-Instruct...
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) WARNING 04-17 07:54:19 rocm.py:211] Model architecture 'Qwen2ForCausalLM' is partially supported by ROCm: Sliding window attention (SWA) is not yet supported in Triton flash attention. For half-precision SWA support, please use CK flash attention by setting `VLLM_USE_TRITON_FLASH_ATTN=0`
+edgecraftrag-vllm-service  | INFO 04-17 07:54:19 weight_utils.py:251] Using model weights format ['*.safetensors']
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:19 weight_utils.py:251] Using model weights format ['*.safetensors']
+Loading safetensors checkpoint shards:   0% Completed | 0/4 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  25% Completed | 1/4 [00:01<00:04,  1.45s/it]
+Loading safetensors checkpoint shards:  50% Completed | 2/4 [00:02<00:03,  1.51s/it]
+Loading safetensors checkpoint shards:  75% Completed | 3/4 [00:04<00:01,  1.52s/it]
+Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:05<00:00,  1.49s/it]
+Loading safetensors checkpoint shards: 100% Completed | 4/4 [00:05<00:00,  1.50s/it]
+edgecraftrag-vllm-service  | 
+edgecraftrag-vllm-service  | INFO 04-17 07:54:43 model_runner.py:1100] Loading model weights took 7.1217 GB
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:43 model_runner.py:1100] Loading model weights took 7.1217 GB
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:58 worker.py:266] Memory profiling takes 14.52 seconds
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:58 worker.py:266] the current vLLM instance can use total_gpu_memory (191.98GiB) x gpu_memory_utilization (0.90) = 172.79GiB
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:54:58 worker.py:266] model weights take 7.12GiB; non_torch_memory takes 1.90GiB; PyTorch activation peak memory takes 2.83GiB; the rest of the memory reserved for KV Cache is 160.94GiB.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:58 worker.py:266] Memory profiling takes 14.60 seconds
+edgecraftrag-vllm-service  | INFO 04-17 07:54:58 worker.py:266] the current vLLM instance can use total_gpu_memory (191.98GiB) x gpu_memory_utilization (0.90) = 172.79GiB
+edgecraftrag-vllm-service  | INFO 04-17 07:54:58 worker.py:266] model weights take 7.12GiB; non_torch_memory takes 1.96GiB; PyTorch activation peak memory takes 2.83GiB; the rest of the memory reserved for KV Cache is 160.88GiB.
+edgecraftrag-vllm-service  | INFO 04-17 07:54:58 executor_base.py:107] # CUDA blocks: 376547, # CPU blocks: 37449
+edgecraftrag-vllm-service  | INFO 04-17 07:54:58 executor_base.py:112] Maximum concurrency for 32768 tokens per request: 183.86x
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:55:02 model_runner.py:1409] Capturing cudagraphs for decoding. This may lead to unexpected consequences if the model is not static. To run the model in eager mode, set 'enforce_eager=True' or use '--enforce-eager' in the CLI. If out-of-memory error occurs during cudagraph capture, consider decreasing `gpu_memory_utilization` or switching to eager mode. You can also reduce the `max_num_seqs` as needed to decrease memory usage.
+edgecraftrag-vllm-service  | INFO 04-17 07:55:02 model_runner.py:1409] Capturing cudagraphs for decoding. This may lead to unexpected consequences if the model is not static. To run the model in eager mode, set 'enforce_eager=True' or use '--enforce-eager' in the CLI. If out-of-memory error occurs during cudagraph capture, consider decreasing `gpu_memory_utilization` or switching to eager mode. You can also reduce the `max_num_seqs` as needed to decrease memory usage.
+Capturing CUDA graph shapes: 100%|██████████| 35/35 [00:12<00:00,  2.84it/s]
+edgecraftrag-vllm-service  | INFO 04-17 07:55:15 custom_all_reduce.py:272] Registering 1995 cuda graph addresses
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:55:15 custom_all_reduce.py:272] Registering 1995 cuda graph addresses
+edgecraftrag-vllm-service  | INFO 04-17 07:55:15 model_runner.py:1536] Graph capturing finished in 12 secs, took 0.35 GiB
+edgecraftrag-vllm-service  | (VllmWorkerProcess pid=315) INFO 04-17 07:55:15 model_runner.py:1536] Graph capturing finished in 12 secs, took 0.35 GiB
+edgecraftrag-vllm-service  | INFO 04-17 07:55:15 engine.py:72] init engine (profile, create kv cache, warmup model) took 31.16 seconds
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 api_server.py:692] Using supplied chat template:
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 api_server.py:692] None
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:19] Available routes are:
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /openapi.json, Methods: GET, HEAD
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /docs, Methods: GET, HEAD
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /docs/oauth2-redirect, Methods: GET, HEAD
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /redoc, Methods: GET, HEAD
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /health, Methods: GET
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /ping, Methods: GET, POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /tokenize, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /detokenize, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /v1/models, Methods: GET
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /version, Methods: GET
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /v1/chat/completions, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /v1/completions, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /v1/embeddings, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /pooling, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /score, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /v1/score, Methods: POST
+edgecraftrag-vllm-service  | INFO 04-17 07:55:18 launcher.py:27] Route: /invocations, Methods: POST
+edgecraftrag-vllm-service  | INFO:     Started server process [1]
+edgecraftrag-vllm-service  | INFO:     Waiting for application startup.
+edgecraftrag-vllm-service  | INFO:     Application startup complete.
+edgecraftrag-vllm-service  | INFO:     Uvicorn running on http://0.0.0.0:8011 (Press CTRL+C to quit)
+edgecraftrag-vllm-service  | INFO:     172.18.0.1:43376 - "GET /health HTTP/1.1" 200 OK
+edgecraftrag-vllm-service  | INFO:     172.18.0.1:46590 - "GET /health HTTP/1.1" 200 OK
+edgecraftrag-vllm-service  | INFO:     172.18.0.1:58966 - "GET /health HTTP/1.1" 200 OK
+
+При запуске тестов, взятых из документации воникают следующие ошибки
+
+curl -vv -X POST http://${HOST_IP}:16010/v1/settings/pipelines -H "Content-Type: application/json" -d @tests/test_pipeline_local_llm.json | jq '.'
+Note: Unnecessary use of -X or --request, POST is already inferred.
+*   Trying 10.53.22.29:16010...
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0* Connected to 10.53.22.29 (10.53.22.29) port 16010 (#0)
+> POST /v1/settings/pipelines HTTP/1.1
+> Host: 10.53.22.29:16010
+> User-Agent: curl/7.81.0
+> Accept: */*
+> Content-Type: application/json
+> Content-Length: 1001
+> 
+} [1001 bytes data]
+100  1001    0     0  100  1001      0     10  0:01:40  0:01:32  0:00:08     0* Mark bundle as not supporting multiuse
+< HTTP/1.1 500 Internal Server Error
+< date: Thu, 17 Apr 2025 08:21:33 GMT
+< server: uvicorn
+< content-length: 173
+< content-type: application/json
+< 
+{ [173 bytes data]
+100  1174  100   173  100  1001      1     10  0:02:53  0:01:32  0:01:21    55
+* Connection #0 to host 10.53.22.29 left intact
+{
+  "detail": "Repo id must be in the form 'repo_name' or 'namespace/repo_name': './models/Qwen/Qwen2-7B-Instruct/INT4_compressed_weights'. Use `repo_type` argument if needed."
+}
+
+Лог ошибки в сервисе server:
+edgecraftrag-server  | /usr/local/lib/python3.11/site-packages/openvino/runtime/__init__.py:10: DeprecationWarning: The `openvino.runtime` module is deprecated and will be removed in the 2026.0 release. Please replace `openvino.runtime` with `openvino`.
+edgecraftrag-server  |   warnings.warn(
+edgecraftrag-server  | LLM is explicitly disabled. Using MockLLM.
+edgecraftrag-server  | INFO:     Started server process [1]
+edgecraftrag-server  | INFO:     Waiting for application startup.
+edgecraftrag-server  | INFO:     Application startup complete.
+edgecraftrag-server  | INFO:     Uvicorn running on http://0.0.0.0:16010 (Press CTRL+C to quit)
+edgecraftrag-server  | INFO:     10.53.22.29:51794 - "POST /v1/settings/pipelines HTTP/1.1" 422 Unprocessable Entity
+edgecraftrag-server  | `loss_type=None` was set in the config but it is unrecognised.Using the default loss: `ForCausalLMLoss`.
+edgecraftrag-server  | Saved OpenVINO model to ./models/BAAI/bge-small-en-v1.5. Use it with `embed_model = OpenVINOEmbedding(model_id_or_path='./models/BAAI/bge-small-en-v1.5')`.
+edgecraftrag-server  | Could not infer whether the model was already converted or not to the OpenVINO IR, keeping `export=True`.
+edgecraftrag-server  | Repo id must be in the form 'repo_name' or 'namespace/repo_name': './models/Qwen/Qwen2-7B-Instruct/INT4_compressed_weights'. Use `repo_type` argument if needed.
+edgecraftrag-server  | Saved OpenVINO model to ./models/BAAI/bge-reranker-large. Use it with `embed_model = OpenVINORerank(model='./models/BAAI/bge-reranker-large')`.
+edgecraftrag-server  | INFO:     10.53.22.29:57548 - "POST /v1/settings/pipelines HTTP/1.1" 500 Internal Server Error
